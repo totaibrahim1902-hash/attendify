@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>حاضر | لوحة الدكتور</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+:root{--g:#0f766e;--bg:#f1f5f4;--t:#10201e}
+*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;background:var(--bg);color:var(--t)}
+header{background:var(--g);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center}
+header b{font-size:22px}header small{opacity:.85}
+main{max-width:980px;margin:18px auto;padding:0 14px}
+.card{background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 1px 4px #0001}
+h2{margin:0 0 12px;font-size:18px}
+input{padding:9px;border:1px solid #cbd5d3;border-radius:8px;font:inherit;margin:3px}
+button,.btn{background:var(--g);color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;cursor:pointer;text-decoration:none;display:inline-block;margin:3px}
+button.alt{background:#e2e8e7;color:var(--t)}
+.row{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #e5eceb;padding:10px 0;flex-wrap:wrap;gap:6px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:7px;text-align:right;border-bottom:1px solid #e5eceb}
+th{background:#e8f1ef;position:sticky;top:0}.bad{background:#fee2e2;color:#991b1b;font-weight:700}
+.scroll{max-height:420px;overflow:auto}
+#proj{position:fixed;inset:0;background:#0b1f1d;color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:9}
+#proj canvas{background:#fff;border-radius:16px;width:min(68vh,90vw);height:min(68vh,90vw)}
+#proj h1{margin:0;font-size:28px}#sec{font-size:42px;font-weight:700;color:#5eead4}
+#login{max-width:340px;margin:60px auto;text-align:center}.err{color:#b91c1c}
+</style></head><body>
+<header><div><b>حاضر</b> <small>Attendify · Scan. In. Done.</small></div><button class="alt" id="out" style="display:none">خروج</button></header>
+<main>
+<div id="login" class="card"><h2>دخول الدكتور</h2>
+<input id="pw" type="password" placeholder="كلمة السر"><br><button id="lg">دخول</button><p class="err" id="le"></p></div>
+
+<div id="app" style="display:none">
+<div class="card"><h2>محاضرة جديدة</h2>
+<input id="title" placeholder="اسم المحاضرة (مثلاً: المحاضرة 3)">
+<input id="rad" type="number" value="100" style="width:90px" title="النطاق بالمتر"> متر<br>
+<button class="alt" id="loc">📍 استخدم موقعي الحالي كمكان القاعة</button> <span id="locs">لسه ما اتحددش</span><br>
+<button id="start">ابدأ المحاضرة</button></div>
+<div class="card"><h2>المحاضرات</h2><div id="ls"></div></div>
+<div class="card"><h2>تقرير الحضور والغياب <a class="btn" href="/api/report.csv">⬇ تحميل Excel (CSV)</a></h2>
+<div class="scroll"><table id="rep"></table></div></div>
+</div></main>
+
+<div id="proj"><h1 id="pt"></h1><canvas id="qr"></canvas>
+<div>QR بيتغير كل 30 ثانية — يتحدث بعد: <span id="sec">30</span> ث</div>
+<div id="cnt" style="font-size:24px"></div><button class="alt" id="pc">إغلاق العرض</button></div>
+
+<script>
+const $=s=>document.querySelector(s);let pos=null,cur=null,last='';
+async function api(u,b){const r=await fetch(u,b===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+ if(r.status===401&&u!=='/api/login'){gate(false);throw 0}return r.json()}
+function gate(on){$('#login').style.display=on?'none':'';$('#app').style.display=on?'':'none';$('#out').style.display=on?'':'none';if(on)load()}
+$('#lg').onclick=async()=>{const d=await api('/api/login',{password:$('#pw').value});d.ok?gate(true):$('#le').textContent=d.error};
+$('#pw').onkeydown=e=>e.key==='Enter'&&$('#lg').click();
+$('#out').onclick=()=>{document.cookie='sid=;Max-Age=0;Path=/';gate(false)};
+$('#loc').onclick=()=>{$('#locs').textContent='بنحدد...';navigator.geolocation.getCurrentPosition(p=>{pos=p.coords;$('#locs').textContent='✅ تم (دقة '+Math.round(p.coords.accuracy)+' م)'},()=>$('#locs').textContent='❌ فعّل الموقع',{enableHighAccuracy:true,timeout:15000})};
+$('#start').onclick=async()=>{if(!pos)return alert('حدد موقع القاعة الأول');
+ const d=await api('/api/lectures',{title:$('#title').value,lat:pos.latitude,lng:pos.longitude,radius:$('#rad').value});
+ if(!d.ok)return alert(d.error);$('#title').value='';await load();show(d.id)};
+async function load(){const L=await api('/api/lectures');
+ $('#ls').innerHTML=L.map(l=>`<div class="row"><span><b>${l.title}</b> · ${l.date} · حضور: ${l.count} ${l.closed?'🔒':'🟢'}</span>
+ <span><button onclick="show('${l.id}')">عرض QR</button><button class="alt" onclick="tog('${l.id}',${l.closed})">${l.closed?'فتح':'قفل'}</button></span></div>`).join('')||'مفيش محاضرات';
+ const R=await api('/api/report');
+ $('#rep').innerHTML='<tr><th>رقم الجلوس</th><th>الاسم</th><th>حضور</th><th>غياب</th><th>نسبة الغياب</th></tr>'+
+ R.rows.map(r=>`<tr class="${r.pct>=R.max?'bad':''}"><td>${r.id}</td><td>${r.name}</td><td>${r.n}</td><td>${r.abs}</td><td>${r.pct}%</td></tr>`).join('')}
+async function tog(id,closed){await api('/api/lectures/'+id+'/'+(closed?'open':'close'),{});load()}
+function show(id){cur=id;last='';$('#proj').style.display='flex';tick()}
+$('#pc').onclick=()=>{cur=null;$('#proj').style.display='none';load()};
+function draw(text){const q=qrcode(0,'M');q.addData(text);q.make();const n=q.getModuleCount(),c=$('#qr'),k=8,m=2;
+ c.width=c.height=(n+2*m)*k;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.fillStyle='#000';
+ for(let r=0;r<n;r++)for(let i=0;i<n;i++)if(q.isDark(r,i))x.fillRect((i+m)*k,(r+m)*k,k,k)}
+async function tick(){if(!cur)return;try{const d=await api('/api/lectures/'+cur+'/live');if(!cur)return;
+ $('#pt').textContent=d.title+(d.open?'':' (مقفولة)');
+ if(d.open&&d.token!==last){last=d.token;draw(location.origin+'/?t='+d.token)}
+ $('#sec').textContent=Math.ceil(d.secondsLeft);$('#cnt').textContent='سجّل حضوره: '+d.attendees.length+' / '+d.total}catch(e){}}
+setInterval(tick,1000);
+fetch('/api/lectures').then(r=>r.status===200&&gate(true));
+</script></body></html>

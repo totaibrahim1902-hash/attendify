@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>حاضر | تسجيل الحضور</title>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;background:#0f766e;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.c{background:#fff;border-radius:18px;padding:24px;width:100%;max-width:400px;text-align:center}
+h1{margin:0;color:#0f766e;font-size:34px}p.s{margin:4px 0 18px;color:#64748b;font-size:13px}
+input{width:100%;padding:13px;font-size:18px;text-align:center;border:2px solid #cbd5d3;border-radius:10px;margin-bottom:12px}
+button{width:100%;padding:14px;font-size:17px;border:0;border-radius:10px;background:#0f766e;color:#fff;margin-bottom:10px}
+button.alt{background:#e2e8e7;color:#10201e}#reader{margin-bottom:10px}
+#msg{font-weight:700;line-height:1.7;min-height:28px}.ok{color:#15803d}.no{color:#b91c1c}
+</style></head><body><div class="c">
+<h1>حاضر</h1><p class="s">Scan. In. Done.</p>
+<input id="sid" inputmode="numeric" placeholder="رقم الجلوس">
+<button id="go" style="display:none">✅ سجّلي حضوري</button>
+<button id="scan" class="alt">📷 امسحي الـ QR</button>
+<div id="reader"></div><div id="msg"></div></div>
+<script>
+const $=s=>document.querySelector(s);
+const dev=localStorage.dev||(localStorage.dev=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now()));
+$('#sid').value=localStorage.sid||'';
+let token=new URLSearchParams(location.search).get('t');
+if(token)$('#go').style.display='block';
+const msg=(t,c)=>{$('#msg').textContent=t;$('#msg').className=c||''};
+function submit(){
+  const id=$('#sid').value.trim();if(!id)return msg('اكتبي رقم الجلوس الأول','no');
+  if(!token)return msg('امسحي الـ QR من الشاشة الأول','no');
+  localStorage.sid=id;msg('بنحدد موقعك...');
+  if(!navigator.geolocation)return msg('المتصفح مش بيدعم تحديد الموقع','no');
+  navigator.geolocation.getCurrentPosition(async p=>{
+    try{const r=await fetch('/api/attend',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,studentId:id,deviceId:dev,lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy})});
+      const d=await r.json();d.ok?msg(d.message,'ok'):msg('❌ '+d.error,'no');
+      if(d.ok)history.replaceState({},'','/')}catch{msg('مشكلة في الاتصال، حاولي تاني','no')}
+  },()=>msg('لازم تفعّلي الموقع (GPS) وتسمحي للمتصفح','no'),{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+}
+$('#go').onclick=submit;
+$('#scan').onclick=()=>{
+  if(!$('#sid').value.trim())return msg('اكتبي رقم الجلوس الأول','no');
+  const h=new Html5Qrcode('reader');
+  h.start({facingMode:'environment'},{fps:10,qrbox:240},txt=>{
+    let t=null;try{t=new URL(txt).searchParams.get('t')}catch{}
+    if(t){token=t;h.stop().then(()=>{$('#reader').innerHTML='';submit()})}
+  }).catch(()=>msg('مقدرناش نفتح الكاميرا، اسمحي بالإذن','no'));
+};
+</script></body></html>
