@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: attendify-server
+    runtime: node
+    repo: https://github.com
+    plan: free
+    startCommand: node server.js
+    envVars:
+      - key: DOCTOR_PASSWORD
+        value: 1234
